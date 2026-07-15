@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chezburger Derby 🍔⚽🚗</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍔</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- ============ MAIN MENU ============ -->
+  <div id="screen-main" class="screen">
+    <div class="menu-bg"></div>
+    <div class="title-wrap">
+      <div class="title-burger">🍔</div>
+      <h1 class="title">CHEZBURGER<br><span>DERBY</span></h1>
+      <div class="tagline">rocket-powered car soccer, extra cheese</div>
+    </div>
+    <div class="menu-buttons">
+      <button id="btn-online" class="mbtn primary">⚡ PLAY ONLINE</button>
+      <button id="btn-bot" class="mbtn">🤖 VS BOT</button>
+      <button id="btn-free" class="mbtn">🕹️ FREE PLAY</button>
+      <button id="btn-garage" class="mbtn accent">🔧 GARAGE</button>
+    </div>
+    <div class="controls-hint">
+      <b>WASD</b> drive &nbsp;·&nbsp; <b>SPACE</b> jump / flip &nbsp;·&nbsp; <b>SHIFT</b> boost &nbsp;·&nbsp;
+      <b>CTRL</b> drift &nbsp;·&nbsp; <b>B</b> ball cam &nbsp;·&nbsp; <b>1–4</b> quick chat
+    </div>
+  </div>
+
+  <!-- ============ ONLINE MENU ============ -->
+  <div id="screen-online" class="screen hidden">
+    <div class="menu-bg"></div>
+    <div class="panel">
+      <h2>PLAY ONLINE</h2>
+      <p class="panel-note">Peer-to-peer — one player hosts, friends join with the room code.</p>
+      <button id="btn-host" class="mbtn primary">🏟️ HOST A MATCH</button>
+      <div class="divider">— or join a friend —</div>
+      <div class="join-row">
+        <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+        <button id="btn-join" class="mbtn">JOIN</button>
+      </div>
+      <div id="online-status" class="status"></div>
+      <button id="btn-online-back" class="mbtn ghost">← BACK</button>
+    </div>
+  </div>
+
+  <!-- ============ GARAGE ============ -->
+  <div id="screen-garage" class="screen hidden">
+    <div class="menu-bg"></div>
+    <div class="garage-layout">
+      <div class="garage-left">
+        <h2>🔧 GARAGE</h2>
+        <div id="garage-options"></div>
+        <button id="btn-garage-back" class="mbtn primary">✔ SAVE &amp; BACK</button>
+      </div>
+      <div class="garage-right">
+        <canvas id="garage-canvas"></canvas>
+        <div class="garage-tip">drag to rotate · scroll to zoom</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PAUSE ============ -->
+  <div id="screen-pause" class="screen overlay hidden">
+    <div class="panel">
+      <h2>PAUSED</h2>
+      <div class="controls-list">
+        <div><b>W / S</b><span>throttle / reverse · air pitch</span></div>
+        <div><b>A / D</b><span>steer · air yaw</span></div>
+        <div><b>SPACE</b><span>jump — again for double-jump, with a direction for flip</span></div>
+        <div><b>SHIFT</b><span>boost</span></div>
+        <div><b>CTRL / C</b><span>drift (powerslide)</span></div>
+        <div><b>Q / E</b><span>air roll</span></div>
+        <div><b>B</b><span>toggle ball cam</span></div>
+        <div><b>R</b><span>reset ball (free play)</span></div>
+        <div><b>1–4</b><span>quick chat (online)</span></div>
+      </div>
+      <button id="btn-resume" class="mbtn primary">RESUME</button>
+      <button id="btn-leave" class="mbtn ghost">LEAVE MATCH</button>
+    </div>
+  </div>
+
+  <!-- ============ HUD ============ -->
+  <div id="hud" class="hidden">
+    <div class="scoreboard">
+      <div class="score blue"><span id="score-blue">0</span></div>
+      <div class="clock-wrap">
+        <div id="clock">5:00</div>
+        <div id="ot-tag">OVERTIME</div>
+      </div>
+      <div class="score orange"><span id="score-orange">0</span></div>
+    </div>
+    <div id="room-tag"></div>
+
+    <div id="banner"></div>
+    <div id="banner-sub"></div>
+    <div id="feed"></div>
+
+    <div class="boost-wrap">
+      <div class="boost-bar"><div id="boost-fill"></div></div>
+      <div class="boost-label"><span id="boost-num">33</span> BOOST</div>
+    </div>
+    <div class="speed-wrap"><span id="speedo">0</span><small>km/h</small></div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
