@@ -8,18 +8,24 @@ function fieldTexture() {
   const ctx = cv.getContext('2d');
   // base
   const grad = ctx.createRadialGradient(800, 512, 100, 800, 512, 950);
-  grad.addColorStop(0, '#1b2436');
-  grad.addColorStop(1, '#10141f');
+  grad.addColorStop(0, '#20304a');
+  grad.addColorStop(0.6, '#16213a');
+  grad.addColorStop(1, '#0d1424');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 1600, 1024);
-  // subtle mow stripes
+  // mow stripes (each half tinted toward its team)
   for (let i = 0; i < 16; i++) {
-    if (i % 2) continue;
-    ctx.fillStyle = 'rgba(255,255,255,0.018)';
+    ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.028)' : 'rgba(0,0,0,0.05)';
     ctx.fillRect(i * 100, 0, 100, 1024);
   }
-  ctx.strokeStyle = 'rgba(160,200,255,0.5)';
+  ctx.fillStyle = 'rgba(47,139,255,0.05)';
+  ctx.fillRect(0, 0, 800, 1024);
+  ctx.fillStyle = 'rgba(255,140,26,0.05)';
+  ctx.fillRect(800, 0, 800, 1024);
+  ctx.strokeStyle = 'rgba(180,215,255,0.65)';
   ctx.lineWidth = 6;
+  ctx.shadowColor = 'rgba(140,190,255,0.6)';
+  ctx.shadowBlur = 8;
   // border + halves
   ctx.strokeRect(30, 30, 1540, 964);
   ctx.beginPath(); ctx.moveTo(800, 30); ctx.lineTo(800, 994); ctx.stroke();
@@ -30,14 +36,12 @@ function fieldTexture() {
   ctx.strokeRect(30, 512 - 220, 190, 440);
   ctx.strokeStyle = 'rgba(255,140,26,0.55)';
   ctx.strokeRect(1570 - 190, 512 - 220, 190, 440);
-  // center logo
-  ctx.fillStyle = 'rgba(255,209,102,0.16)';
-  ctx.font = 'bold 74px Arial Black, sans-serif';
+  // center logo (no glow)
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,209,102,0.18)';
+  ctx.font = 'bold 120px Arial Black, sans-serif';
   ctx.textAlign = 'center';
-  ctx.save();
-  ctx.translate(800, 512);
-  ctx.fillText('🍔', 0, 26);
-  ctx.restore();
+  ctx.fillText('🍔', 800, 556);
   const tex = new THREE.CanvasTexture(cv);
   tex.anisotropy = 8;
   return tex;

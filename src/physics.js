@@ -167,9 +167,11 @@ export class CarPhys {
       let vlat = this.vel.dot(rgt);
       const vy = this.vel.y;
 
-      // steering (reversed when driving backwards)
-      const speedFac = THREE.MathUtils.clamp(Math.abs(vf) / 9, 0, 1);
-      const highSpeedDamp = 1 / (1 + Math.abs(vf) * 0.012);
+      // steering: responsive from low speed, gently tightened at high speed.
+      // reversed when driving backwards. Only steer when actually rolling.
+      const absVf = Math.abs(vf);
+      const speedFac = absVf < 0.4 ? 0 : THREE.MathUtils.clamp(0.35 + absVf / 7, 0, 1);
+      const highSpeedDamp = 1 / (1 + absVf * 0.010);
       const yawIn = inp.steer * CAR.yawRate * speedFac * highSpeedDamp *
                     (this.drifting ? CAR.driftYawMult : 1) * (vf < -0.5 ? -1 : 1);
       this.yaw -= yawIn * dt;

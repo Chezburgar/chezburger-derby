@@ -18,8 +18,13 @@ export const TRAILS = {
   gold:   { name: 'Gold Rush',colors: [0xfff7cc, 0xffd700, 0xb8860b] },
 };
 
-function paintMat(hex, metal = 0.75, rough = 0.32) {
-  return new THREE.MeshStandardMaterial({ color: hex, metalness: metal, roughness: rough });
+function paintMat(hex, metal = 0.35, rough = 0.35) {
+  // glossy automotive paint: clearcoat over a satin base
+  return new THREE.MeshPhysicalMaterial({
+    color: hex, metalness: metal, roughness: rough,
+    clearcoat: 1.0, clearcoatRoughness: 0.12,
+    envMapIntensity: 1.1,
+  });
 }
 
 function box(w, h, d, mat, x = 0, y = 0, z = 0) {

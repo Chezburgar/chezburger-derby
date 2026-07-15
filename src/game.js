@@ -16,6 +16,14 @@ import { Net, packCar } from './net.js';
 
 const FIXED_DT = 1 / 120;
 
+// shortest-path angle interpolation
+function angleLerp(a, b, t) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
 function ballTexture() {
   const cv = document.createElement('canvas');
   cv.width = 512; cv.height = 256;
@@ -78,31 +86,37 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.15;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x0b1024, 220, 620);
+    this.scene.fog = new THREE.Fog(0x0b1024, 240, 640);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.55;
-    this.camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 1500);
+    this.scene.environmentIntensity = 0.9;
+    this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1500);
     this.camera.position.set(-70, 20, 40);
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.55, 0.82);
+    // bloom only on bright/emissive elements (higher threshold) for a clean look
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.7, 0.6, 0.9);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
-    // lights
-    this.scene.add(new THREE.HemisphereLight(0x8fb8ff, 0x1a1626, 0.85));
-    const sun = new THREE.DirectionalLight(0xfff4e0, 2.0);
+    // lights — warm key sun + cool sky fill + accent rim
+    this.scene.add(new THREE.HemisphereLight(0x9fc6ff, 0x1a1626, 1.0));
+    const sun = new THREE.DirectionalLight(0xfff2d8, 2.6);
     sun.position.set(60, 90, 40);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.5;
     Object.assign(sun.shadow.camera, { left: -100, right: 100, top: 70, bottom: -70, far: 260 });
     this.scene.add(sun);
-    this.scene.add(new THREE.AmbientLight(0x30364a, 0.7));
+    const rim = new THREE.DirectionalLight(0x6a4bff, 0.8);
+    rim.position.set(-50, 30, -60);
+    this.scene.add(rim);
+    this.scene.add(new THREE.AmbientLight(0x2a3048, 0.5));
 
     buildArena(this.scene);
     this.pads = new BoostPads(this.scene);
@@ -111,15 +125,18 @@ export class Game {
     // ---------- ball ----------
     this.ball = new Ball();
     this.ballMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(BALL.radius, 28, 20),
-      new THREE.MeshStandardMaterial({
-        map: ballTexture(), metalness: 0.55, roughness: 0.3,
-        emissive: 0x223355, emissiveIntensity: 0.25,
+      new THREE.SphereGeometry(BALL.radius, 40, 28),
+      new THREE.MeshPhysicalMaterial({
+        map: ballTexture(), metalness: 0.4, roughness: 0.22,
+        clearcoat: 0.8, clearcoatRoughness: 0.2,
+        emissive: 0x2a4a7a, emissiveIntensity: 0.35, envMapIntensity: 1.2,
       }));
     this.ballMesh.castShadow = true;
     this.scene.add(this.ballMesh);
     this.ballLight = new THREE.PointLight(0x99bbff, 60, 30, 1.8);
     this.scene.add(this.ballLight);
+    this.ballPrev = new THREE.Vector3();
+    this._alpha = 1;      // render interpolation factor
 
     // ---------- players ----------
     this.players = new Map();  // id -> player record
@@ -131,7 +148,7 @@ export class Game {
     this.phase = 'warmup';
     this.phaseT = 0;
     this.countShown = -1;
-    this.ballCam = true;
+    this.ballCam = false;   // chase cam by default; press B for ball cam
 
     this.myPlayer = this._addPlayer(this.mode === 'join' ? '_pending' : 'host',
       opts.custom.name || 'Player', 'blue', opts.custom, { local: true });
@@ -194,6 +211,8 @@ export class Game {
       netPos: new THREE.Vector3(), netVel: new THREE.Vector3(),
       netAge: 0, boostingRemote: false, flipRemote: false,
       lastGrounded: true, flipSpin: 0,
+      prevPos: new THREE.Vector3(), prevYaw: 0, prevPitch: 0, prevRoll: 0,
+      renderPos: new THREE.Vector3(),
     };
     this.players.set(id, p);
     this._spawnAtSlot(p);
@@ -469,9 +488,17 @@ export class Game {
     // fixed-step simulation
     this._accum = Math.min(this._accum + dt, FIXED_DT * 6);
     while (this._accum >= FIXED_DT) {
+      // snapshot previous transforms so rendering can interpolate (kills jitter)
+      for (const p of this.players.values()) {
+        p.prevPos.copy(p.car.pos);
+        p.prevYaw = p.car.yaw; p.prevPitch = p.car.pitch; p.prevRoll = p.car.roll;
+      }
+      this.ballPrev.copy(this.ball.pos);
       this._step(FIXED_DT);
       this._accum -= FIXED_DT;
     }
+    // fraction into the next physics step, for smooth interpolation
+    this._alpha = this._accum / FIXED_DT;
 
     this._updateVisuals(dt, now / 1000);
     this._updateCamera(dt);
@@ -665,16 +692,15 @@ export class Game {
   _updateVisuals(dt, t) {
     this.pads.update(dt, t);
     this.particles.update(dt);
+    const a = this._alpha;
 
-    // ball
-    this.ballMesh.position.copy(this.ball.pos);
+    // ball (interpolated between physics steps)
+    const bpos = this.ballMesh.position.copy(this.ballPrev).lerp(this.ball.pos, a);
     this.ballMesh.rotation.x += this.ball.spin.x * dt;
     this.ballMesh.rotation.z += this.ball.spin.z * dt;
-    this.ballLight.position.copy(this.ball.pos).y += 2;
-    // ball trail when fast
+    this.ballLight.position.copy(bpos); this.ballLight.position.y += 2;
     if (this.ball.vel.length() > 35) {
-      this.particles.emit(this.ball.pos.x, this.ball.pos.y, this.ball.pos.z,
-        0, 0, 0, 0x88aaff, 2.2, 0.3, 0);
+      this.particles.emit(bpos.x, bpos.y, bpos.z, 0, 0, 0, 0x88aaff, 2.2, 0.3, 0);
     }
 
     // cars
@@ -682,10 +708,16 @@ export class Game {
     for (const p of this.players.values()) {
       const c = p.car;
       p.mesh.visible = c.demolished <= 0;
-      p.speedLines.update(c.pos, c.vel, c.supersonic && c.demolished <= 0);
-      if (c.demolished > 0) continue;
+      if (c.demolished > 0) { p.speedLines.update(c.pos, c.vel, false); continue; }
 
-      p.mesh.position.copy(c.pos);
+      // interpolated render transform
+      const rpos = p.renderPos.copy(p.prevPos).lerp(c.pos, a);
+      const ryaw = angleLerp(p.prevYaw, c.yaw, a);
+      const rpitch = angleLerp(p.prevPitch, c.pitch, a);
+      const rroll = angleLerp(p.prevRoll, c.roll, a);
+      p.speedLines.update(rpos, c.vel, c.supersonic && c.demolished <= 0);
+
+      p.mesh.position.copy(rpos);
       // flip animation (visual barrel/front spin)
       let flipPitch = 0, flipRoll = 0;
       if ((p.local || p.bot) ? c.flipping > 0 : p.flipRemote) {
@@ -696,20 +728,20 @@ export class Game {
         flipRoll = fy * Math.sin(k * Math.PI * 2) * 1.0;
       }
       p.mesh.rotation.set(0, 0, 0);
-      p.mesh.rotateY(c.yaw);
-      p.mesh.rotateZ(c.pitch + flipPitch);
-      p.mesh.rotateX(c.roll + flipRoll);
+      p.mesh.rotateY(ryaw);
+      p.mesh.rotateZ(rpitch + flipPitch);
+      p.mesh.rotateX(rroll + flipRoll);
 
-      // wheels spin
-      const fwdSpeed = c.vel.length() * Math.sign(Math.cos(c.yaw) * c.vel.x - Math.sin(c.yaw) * c.vel.z >= 0 ? 1 : -1);
+      // wheels spin (based on forward speed)
+      const fwdSpeed = c.vel.x * Math.cos(c.yaw) - c.vel.z * Math.sin(c.yaw);
       for (const w of p.mesh.userData.wheels) w.rotation.z -= fwdSpeed * dt * 1.4;
 
       // boost flame
       const boosting = p.local || p.bot ? (c.boosting && c.boost > 0) : p.boostingRemote;
       if (boosting) {
         for (const [ax, ay, az] of p.mesh.userData.boostAnchors) {
-          const anchor = new THREE.Vector3(ax, ay, az).applyEuler(p.mesh.rotation).add(c.pos);
-          back.set(-Math.cos(c.yaw), 0.1, Math.sin(c.yaw));
+          const anchor = new THREE.Vector3(ax, ay, az).applyEuler(p.mesh.rotation).add(rpos);
+          back.set(-Math.cos(ryaw), 0.1, Math.sin(ryaw));
           this.particles.boostTrail(anchor, back, p.custom.trail, dt, t);
         }
       }
@@ -719,30 +751,44 @@ export class Game {
   _updateCamera(dt) {
     const me = this.myPlayer;
     const c = me.car;
-    const k = 1 - Math.exp(-8 * dt);
-    const desired = new THREE.Vector3();
+    const carPos = me.renderPos;          // interpolated (smooth)
+    const ballPos = this.ballMesh.position;
+    const k = 1 - Math.exp(-9 * dt);
+    const DIST = 13, HEIGHT = 5.2;
+
+    // smoothed horizontal "behind" direction so the camera swings gently
+    this._camDir ??= new THREE.Vector3(-Math.cos(c.yaw), 0, Math.sin(c.yaw));
+    const targetDir = new THREE.Vector3();
 
     if (this.ballCam) {
-      const away = c.pos.clone().sub(this.ball.pos).setY(0);
-      if (away.lengthSq() < 1) away.set(1, 0, 0);
-      away.normalize();
-      desired.copy(c.pos).addScaledVector(away, 11).add({ x: 0, y: 4.6, z: 0 });
+      // behind the car along the car→ball axis (keeps ball framed)
+      targetDir.copy(carPos).sub(ballPos).setY(0);
+      if (targetDir.lengthSq() < 4) targetDir.copy(this._camDir); // too close: hold
+      targetDir.normalize();
     } else {
-      const backDir = new THREE.Vector3(-Math.cos(c.yaw), 0, Math.sin(c.yaw));
-      desired.copy(c.pos).addScaledVector(backDir, 11).add({ x: 0, y: 4.6, z: 0 });
+      // behind the car's heading, biased slightly toward travel direction
+      const heading = new THREE.Vector3(-Math.cos(c.yaw), 0, Math.sin(c.yaw));
+      const travel = new THREE.Vector3(-c.vel.x, 0, -c.vel.z);
+      if (travel.lengthSq() > 25) { heading.lerp(travel.normalize(), 0.25); heading.normalize(); }
+      targetDir.copy(heading);
     }
-    // keep camera inside arena-ish
-    desired.y = Math.max(2.2, desired.y);
+    // ease camera direction (a bit snappier for chase cam)
+    this._camDir.lerp(targetDir, this.ballCam ? k * 0.6 : k).normalize();
+
+    const desired = new THREE.Vector3().copy(carPos)
+      .addScaledVector(this._camDir, DIST);
+    desired.y = Math.max(2.4, carPos.y + HEIGHT);
     this._camPos.lerp(desired, k);
     this.camera.position.copy(this._camPos);
 
+    // look target: toward the ball in ball cam, ahead of the car otherwise
     const look = this.ballCam
-      ? this.ball.pos.clone().add({ x: 0, y: 1, z: 0 })
-      : c.pos.clone().addScaledVector(new THREE.Vector3(Math.cos(c.yaw), 0, -Math.sin(c.yaw)), 12).add({ x: 0, y: 2, z: 0 });
+      ? ballPos.clone().setY(ballPos.y + 1).lerp(carPos, 0.12)
+      : carPos.clone().addScaledVector(this._camDir, -14).setY(carPos.y + 2.6);
     this.camera.lookAt(look);
 
     // speed FOV kick
-    const targetFov = 72 + Math.min(14, Math.max(0, c.vel.length() - 30) * 0.5);
+    const targetFov = 70 + Math.min(16, Math.max(0, c.vel.length() - 26) * 0.55);
     this.camera.fov += (targetFov - this.camera.fov) * k;
     this.camera.updateProjectionMatrix();
   }
